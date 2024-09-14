@@ -1,0 +1,68 @@
+/* 일반 스타일 */
+.member-list-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.member-list {
+  list-style-type: none;
+  padding: 0;
+}
+
+.member-list-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.member-details {
+  background-color: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+/* 인쇄용 스타일 */
+@media print {
+  @page {
+    size: letter landscape;
+  }
+  
+  body {
+    width: 50%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .member-list-container {
+    width: 100%;
+    max-width: none;
+    padding: 0.5in;
+  }
+
+  .member-list {
+    display: none;
+  }
+
+  .member-details {
+    width: 100%;
+    background-color: white;
+  }
+
+  .member-photo {
+    width: 80px;
+    height: 112px;
+  }
+
+  h3 {
+    font-size: 18pt !important;
+  }
+
+  p {
+    font-size: 10pt !important;
+  }
+
+  .print-button {
+    display: none;
+  }
+}

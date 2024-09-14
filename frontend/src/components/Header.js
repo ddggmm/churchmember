@@ -1,0 +1,35 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { FaHome } from 'react-icons/fa';
+
+function Header() {
+  const { isLoggedIn, logout } = useAuth();
+
+  return (
+    <header className="p-4 bg-gray-100">
+      <div className="container mx-auto">
+        <div className="flex flex-col items-center">
+          <Link to="/" className="mb-4">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 text-transparent bg-clip-text hover:opacity-80 transition-opacity">
+              예수소망교회 등록현황
+            </h1>
+          </Link>
+          {isLoggedIn && (
+            <nav className="flex justify-center items-center space-x-4">
+              <Link to="/" className="flex items-center hover:text-blue-500">
+                <FaHome className="mr-1" /> 홈
+              </Link>
+              <Link to="/member-registration" className="hover:text-blue-500">신규등록</Link>
+              <Link to="/edit" className="hover:text-blue-500">등록수정</Link>
+              <Link to="/list" className="hover:text-blue-500">목록보기</Link>
+              <button onClick={logout} className="hover:text-blue-500">로그아웃</button>
+            </nav>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export default Header;

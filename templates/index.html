@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교회 멤버 관리 프로그램</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(120deg, #84fab0 0%, #8fd3f4 100%);
+        }
+        .nav-link {
+            color: #4a5568;
+            transition: color 0.3s ease;
+        }
+        .nav-link:hover {
+            color: #2d3748;
+        }
+    </style>
+</head>
+<body class="font-sans">
+    <div class="gradient-bg min-h-screen">
+        <div class="container mx-auto px-4 py-8">
+            <header class="flex justify-between items-center mb-8">
+                <h1 class="text-2xl font-bold text-white">교회 멤버 관리</h1>
+                <nav class="flex items-center space-x-6">
+                    <a href="#" class="nav-link text-sm font-medium">신규등록</a>
+                    <a href="#" class="nav-link text-sm font-medium">등록정보 수정</a>
+                    <a href="#" class="nav-link text-sm font-medium">목록 및 출력</a>
+                    <a href="#" class="nav-link text-sm font-medium">통계</a>
+                    <button class="bg-white text-blue-500 font-bold py-2 px-4 rounded shadow-md hover:bg-blue-100 transition duration-300">로그인</button>
+                </nav>
+            </header>
+            
+            <main class="flex flex-col items-center justify-center h-[70vh]">
+                <div class="w-full max-w-md relative">
+                    <input type="text" placeholder="이름으로 검색" class="w-full px-4 py-3 pr-10 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg shadow-lg">
+                    <button class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-blue-500 transition duration-300">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </main>
+            
+            <footer class="mt-8 text-center text-white">
+                <p>&copy; 2024 교회 멤버 관리 프로그램. All rights reserved.</p>
+            </footer>
+        </div>
+    </div>
+</body>
+</html>

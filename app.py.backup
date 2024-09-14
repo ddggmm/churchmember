@@ -1,0 +1,267 @@
+import os
+from flask import Flask, request, jsonify, send_from_directory
+from dotenv import load_dotenv
+import logging
+from flask_sqlalchemy import SQLAlchemy
+from flask_marshmallow import Marshmallow
+from marshmallow import ValidationError
+from datetime import datetime, timedelta
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_migrate import Migrate
+from config import config
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+import base64
+
+# 환경 변수 로드
+load_dotenv()
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+
+# Flask 앱 초기화
+app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+app.config.from_object(config['development'])
+app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # 실제 운영 환경에서는 안전한 비밀키를 사용해야 합니다
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)  # 토큰 만료 시간 설정
+
+# 로깅 설정을 app 객체에 직접 연결 코드
+app.logger.setLevel(logging.INFO)
+
+# 확장 기능 초기화
+db = SQLAlchemy(app)
+ma = Marshmallow(app)
+migrate = Migrate(app, db)
+jwt = JWTManager(app)
+
+# 여기서부터 모델 정의 및 라우트 함수 시작
+class Member(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    register_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
+    name = db.Column(db.String(50), nullable=False)
+    gender = db.Column(db.String(10), nullable=False)  # 성별 항목 추가
+    birth_year = db.Column(db.Integer, nullable=False)
+    birth_month = db.Column(db.Integer, nullable=False)
+    birth_day = db.Column(db.Integer, nullable=False)
+    phone = db.Column(db.String(20), unique=True, nullable=False)
+    address = db.Column(db.String(100))
+    city = db.Column(db.String(50))
+    state = db.Column(db.String(2))
+    zipcode = db.Column(db.String(10))
+    district = db.Column(db.String(50))
+    photo = db.Column(db.String(255))
+    password_hash = db.Column(db.String(128))
+    spouse = db.Column(db.String(50))  # 배우자 항목 추가
+    position = db.Column(db.String(50))  # 직분 항목 추가
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+class MemberSchema(ma.SQLAlchemySchema):
+    class Meta:
+        model = Member
+        load_instance = True
+
+    id = ma.auto_field(dump_only=True)
+    register_date = ma.auto_field(dump_only=True)
+    name = ma.auto_field(required=True)
+    gender = ma.auto_field(required=True)  # 성별 필드 추가
+    birth_year = ma.auto_field(required=True)
+    birth_month = ma.auto_field(required=True)
+    birth_day = ma.auto_field(required=True)
+    phone = ma.auto_field(required=True)
+    address = ma.auto_field()
+    city = ma.auto_field()
+    state = ma.auto_field()
+    zipcode = ma.auto_field()
+    district = ma.auto_field()
+    photo = ma.auto_field()
+    spouse = ma.auto_field()  # 배우자 필드 추가
+    position = ma.auto_field()  # 직분 필드 추가
+    password = ma.String(load_only=True)
+
+member_schema = MemberSchema()
+members_schema = MemberSchema(many=True)
+
+@app.route('/api')
+def home():
+    return jsonify({"message": "Welcome to Church Member Management System API"})
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    username = request.json.get('username', None)
+    password = request.json.get('password', None)
+    
+    member = Member.query.filter_by(name=username).first()
+    if member and member.check_password(password):
+        access_token = create_access_token(identity=username)
+        return jsonify(access_token=access_token, user=member_schema.dump(member)), 200
+    else:
+        return jsonify({"msg": "Bad username or password"}), 401
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    app.logger.info("Received a POST request to /api/register")
+    app.logger.info(f"Request data: {request.json}")
+    
+    try:
+        data = request.json
+        app.logger.info(f"Received data: {data}")
+        
+        if 'password' not in data:
+            return jsonify({"error": "비밀번호가 필요합니다"}), 400
+        
+        password = data.pop('password')
+        
+        # 비밀번호 강 검증
+        if len(password) < 8:
+            return jsonify({"error": "비밀번호는 최소 8자 이상이어야 합니다"}), 400
+        
+        validated_data = member_schema.load(data)
+        app.logger.info(f"Validated data: {validated_data}")
+        
+        new_member = Member(**validated_data)
+        new_member.set_password(password)
+        
+        db.session.add(new_member)
+        db.session.commit()
+        
+        app.logger.info(f"New member registered successfully: {new_member.name}")
+        return jsonify({"message": "회원가입이 완료되었습니다.", "member": member_schema.dump(new_member)}), 201
+    except ValidationError as err:
+        app.logger.error(f"Validation error: {err.messages}")
+        return jsonify({"error": err.messages}), 400
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error creating member: {str(e)}", exc_info=True)
+        return jsonify({"error": "회원가입 중 오류가 발생했습니다. 다시 시도해 주세요."}), 500
+
+@app.route('/api/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user = get_jwt_identity()
+    return jsonify(logged_in_as=current_user), 200
+
+@app.route('/api/members', methods=['GET'])
+@jwt_required()
+def get_members():
+    app.logger.info("GET request received for /api/members")
+    try:
+        members = Member.query.all()
+        app.logger.info(f"Query executed. Found {len(members)} members")
+        for member in members:
+            app.logger.info(f"Member: {member.name}, ID: {member.id}")
+        result = members_schema.dump(members)
+        app.logger.info(f"Serialized {len(result)} members")
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Error in get_members: {str(e)}", exc_info=True)
+        return jsonify({"error": "An error occurred while fetching members"}), 500
+
+@app.route('/api/members/<int:member_id>', methods=['GET'])
+@jwt_required()
+def get_member(member_id):
+    member = Member.query.get_or_404(member_id)
+    return jsonify(member_schema.dump(member))
+
+@app.route('/api/members', methods=['POST'])
+@jwt_required()
+def create_member():
+    try:
+        data = request.json
+        app.logger.debug(f"Received data: {data}")
+        
+        if 'password' not in data:
+            return jsonify({"error": "Password is required"}), 400
+        
+        password = data.pop('password')
+        
+        validated_data = member_schema.load(data)
+        app.logger.debug(f"Validated data: {validated_data}")
+        
+        if isinstance(validated_data, Member):
+            new_member = validated_data
+        else:
+            new_member = Member(**validated_data)
+        new_member.set_password(password)
+        
+        db.session.add(new_member)
+        db.session.commit()
+        return jsonify(member_schema.dump(new_member)), 201
+    except ValidationError as err:
+        app.logger.error(f"Validation error: {err.messages}")
+        return jsonify(err.messages), 400
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error creating member: {str(e)}", exc_info=True)
+        return jsonify({"error": "An error occurred while creating the member"}), 500
+
+@app.route('/api/members/<int:member_id>', methods=['PUT'])
+@jwt_required()
+def update_member(member_id):
+    try:
+        member = Member.query.get_or_404(member_id)
+        data = request.json
+        app.logger.debug(f"Received data for update: {data}")
+        
+        password = data.pop('password', None)
+        
+        validated_data = member_schema.load(data, partial=True, instance=member)
+        app.logger.debug(f"Validated data for update: {validated_data}")
+        
+        if password:
+            validated_data.set_password(password)
+        
+        db.session.commit()
+        return jsonify(member_schema.dump(validated_data))
+    except ValidationError as err:
+        app.logger.error(f"Validation error during update: {err.messages}")
+        return jsonify(err.messages), 400
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating member: {str(e)}", exc_info=True)
+        return jsonify({"error": "An error occurred while updating the member"}), 500
+
+@app.route('/api/members/<int:member_id>', methods=['DELETE'])
+@jwt_required()
+def delete_member(member_id):
+    try:
+        member = Member.query.get_or_404(member_id)
+        db.session.delete(member)
+        db.session.commit()
+        return '', 204
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting member: {str(e)}", exc_info=True)
+        return jsonify({"error": "An error occurred while deleting the member"}), 500
+
+@app.route('/api/test', methods=['GET', 'POST'])
+def test_route():
+    app.logger.info(f"Received a {request.method} request to /api/test")
+    return jsonify({"message": "Test route working"}), 200
+
+# API 라우트를 모두 '/api' 접두사로 시작하도록 수정합니다.
+@app.route('/api/members/search', methods=['GET'])
+def search_members():
+    app.logger.info("Received a GET request to /api/members/search")
+    name = request.args.get('name', '')
+    app.logger.info(f"Searching for name: {name}")
+    
+    if not name:
+        return jsonify({"error": "이름을 입력해주세요."}), 400
+
+    members = Member.query.filter(Member.name.like(f"%{name}%")).all()
+    app.logger.info(f"Found {len(members)} members matching the search")
+    
+    result = members_schema.dump(members)
+    app.logger.info(f"Returning search results: {result}")
+    return jsonify(result)
+
+# 다른 모든 API 라우도 '/api' 접두사로 시작하는지 확인합니다.
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
