@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import axios from '../utils/axiosConfig';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext'; // useAuth import 추가
+import { useAuth } from '../contexts/AuthContext';
 
 function Login() {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { login } = useAuth(); // useAuth에서 login 함수 가져오기
+  const { login } = useAuth();
 
   const handleChange = (e) => {
     setCredentials({ ...credentials, [e.target.name]: e.target.value });
@@ -40,8 +40,8 @@ function Login() {
       <h1 className="text-3xl font-bold mb-8 bg-gradient-to-r from-blue-500 to-purple-500 text-transparent bg-clip-text">
         예수소망교회 등록현황
       </h1>
-      <div className="bg-white rounded-lg shadow-md overflow-hidden w-96" role="form" aria-labelledby="login-title">
-        <h2 id="login-title" className="bg-gradient-to-r from-blue-500 to-purple-500 text-white text-2xl font-bold py-4 px-6 text-center">
+      <div className="bg-white rounded-lg shadow-md overflow-hidden w-96">
+        <h2 className="bg-gradient-to-r from-blue-500 to-purple-500 text-white text-2xl font-bold py-4 px-6 text-center">
           로그인
         </h2>
         <form onSubmit={handleSubmit} className="p-6">

@@ -4,32 +4,25 @@ const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [token, setToken] = useState(localStorage.getItem('token'));
 
   useEffect(() => {
-    const storedLoginStatus = localStorage.getItem('isLoggedIn');
-    if (storedLoginStatus === 'true') {
-      setIsLoggedIn(true);
-    }
-    if (token) {
-      setIsLoggedIn(true);
-    }
-  }, [token]);
+    // 로컬 스토리지나 세션 스토리지에서 로그인 상태 확인
+    const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    setIsLoggedIn(loggedIn);
+  }, []);
 
-  const login = (newToken) => {
+  const login = () => {
     setIsLoggedIn(true);
-    setToken(newToken);
-    localStorage.setItem('token', newToken);
+    localStorage.setItem('isLoggedIn', 'true');
   };
 
   const logout = () => {
     setIsLoggedIn(false);
-    setToken(null);
-    localStorage.removeItem('token');
+    localStorage.removeItem('isLoggedIn');
   };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, login, logout, token }}>
+    <AuthContext.Provider value={{ isLoggedIn, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

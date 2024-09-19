@@ -1,16 +1,36 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaSearch } from 'react-icons/fa';
+import axios from '../utils/axiosConfig';
 
 function Home() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
   const navigate = useNavigate();
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault();
     if (searchTerm.trim()) {
-      navigate(`/members?search=${encodeURIComponent(searchTerm)}`);
+      try {
+        const response = await axios.get(`/api/members/search?name=${encodeURIComponent(searchTerm)}`);
+        if (response.data.length === 1) {
+          navigate(`/members/${response.data[0].id}`);
+        } else if (response.data.length > 1) {
+          setSearchResults(response.data);
+        } else {
+          alert('검색 결과가 없습니다. 다시 확인해 주세요.');
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error('검색 중 오류 발생:', error);
+        alert('검색 중 오류가 발생했습니다.');
+      }
     }
+  };
+
+  const handleSelectMember = (id) => {
+    navigate(`/members/${id}`);
+    setSearchResults([]);
   };
 
   return (
@@ -35,6 +55,22 @@ function Home() {
           </button>
         </div>
       </form>
+      {searchResults.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-xl font-semibold mb-2">검색 결과</h3>
+          <ul className="bg-white shadow-md rounded-lg overflow-hidden">
+            {searchResults.map((member) => (
+              <li 
+                key={member.id} 
+                onClick={() => handleSelectMember(member.id)}
+                className="px-4 py-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+              >
+                {member.name} {member.spouse && `(배우자: ${member.spouse})`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
