@@ -31,7 +31,21 @@ function MemberEdit() {
   const handleSelectMember = async (member) => {
     try {
       const response = await axios.get(`/api/members/${member.id}`);
-      setSelectedMember(response.data);
+      const memberData = response.data;
+      
+      console.log('서버��서 받아온 회원 데이터:', memberData);
+      
+      // 생년월일 처리
+      const birth_year = memberData.birthYear ? memberData.birthYear.toString() : '';
+      const birth_month = memberData.birthMonth ? String(memberData.birthMonth).padStart(2, '0') : '';
+      const birth_day = memberData.birthDay ? String(memberData.birthDay).padStart(2, '0') : '';
+      
+      setSelectedMember({
+        ...memberData,
+        birth_year,
+        birth_month,
+        birth_day,
+      });
       setIsEditing(false);
     } catch (error) {
       console.error('회원 정보 불러오기 중 오류 발생:', error);
@@ -52,8 +66,10 @@ function MemberEdit() {
     e.preventDefault();
     try {
       const updatedMember = { ...selectedMember };
+      if (updatedMember.birth_year && updatedMember.birth_month && updatedMember.birth_day) {
+        updatedMember.birth_date = `${updatedMember.birth_year}-${updatedMember.birth_month}-${updatedMember.birth_day}`;
+      }
       if (updatedMember.photo && updatedMember.photo.startsWith('data:image')) {
-        // Base64 이미지 데이터를 서버로 전송
         updatedMember.photo = updatedMember.photo.split(',')[1];
       }
       await axios.put(`/api/members/${selectedMember.id}`, updatedMember, {
@@ -119,7 +135,10 @@ function MemberEdit() {
             )}
             <div>
               <p><strong>이름:</strong> {selectedMember.name}</p>
-              <p><strong>생년월일:</strong> {`${selectedMember.birth_year}-${selectedMember.birth_month}-${selectedMember.birth_day}`}</p>
+              <p><strong>생년월일:</strong> {selectedMember.birth_year && selectedMember.birth_month && selectedMember.birth_day ? 
+                `${selectedMember.birth_year}-${selectedMember.birth_month}-${selectedMember.birth_day}` : 
+                '정보 없음'}
+              </p>
               <p><strong>전화번호:</strong> {selectedMember.phone}</p>
               <p><strong>주소:</strong> {selectedMember.address}</p>
               <p><strong>도시:</strong> {selectedMember.city}</p>
