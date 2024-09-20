@@ -24,14 +24,17 @@ function Login() {
       const response = await axios.post('/api/auth/login', { 
         email: credentials.email, 
         password: credentials.password 
-      });
+      }, { withCredentials: true });
+      
       if (response.data.message === "로그인 성공") {
-        login();
+        login(response.data.user);
+        console.log("홈으로 이동 시도");
         navigate('/');
+        console.log("홈으로 이동 완료");
       }
     } catch (error) {
       console.error('로그인 오류:', error);
-      setError('로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.');
+      setError(error.response?.data?.message || '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.');
     }
   };
 

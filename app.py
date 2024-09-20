@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
@@ -8,13 +8,20 @@ import os
 from datetime import datetime
 import base64
 from flask import send_from_directory
+from enum import Enum
+from functools import wraps
+
+class UserRole(Enum):
+    USER = 'user'
+    ADMIN = 'admin'
+    SUPER_ADMIN = 'super_admin'
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'instance', 'church_members.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your_secret_key'  # 실제 운영 환경에서는 안전한 비밀키를 사용해야 합니다
+app.config['SECRET_KEY'] = 'your_secret_key'  # 안전한 비밀키로 변경하세요
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -57,17 +64,25 @@ class Member(db.Model):
             'position': self.position
         }
 
-# 새로운 User 모델 추가
+# User 모델 정의
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.Enum(UserRole), default=UserRole.USER, nullable=False)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'role': self.role.value
+        }
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
@@ -77,6 +92,28 @@ app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__fil
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            abort(401)
+        user = User.query.get(session['user_id'])
+        if not user or user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+def super_admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            abort(401)
+        user = User.query.get(session['user_id'])
+        if not user or user.role != UserRole.SUPER_ADMIN:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/')
 def index():
     members = Member.query.all()
@@ -85,7 +122,6 @@ def index():
 @app.route('/member/new', methods=['GET', 'POST'])
 def new_member():
     if request.method == 'POST':
-        # POST 요청 처리 (새 회원 생성)
         new_member = Member(
             name=request.form['name'],
             register_date=datetime.strptime(request.form['register_date'], '%Y-%m-%d').date(),
@@ -94,7 +130,6 @@ def new_member():
             birth_day=int(request.form['birth_day']),
             phone=request.form['phone'],
             gender=request.form['gender'],
-            # 나머지 필드들도 같은 방식으로 추가
         )
         db.session.add(new_member)
         db.session.commit()
@@ -110,7 +145,6 @@ def view_member(id):
 def edit_member(id):
     member = Member.query.get_or_404(id)
     if request.method == 'POST':
-        # POST 요청 처리 (회원 정보 업데이트)
         member.name = request.form['name']
         member.register_date = datetime.strptime(request.form['register_date'], '%Y-%m-%d').date()
         member.birth_year = int(request.form['birth_year'])
@@ -118,17 +152,9 @@ def edit_member(id):
         member.birth_day = int(request.form['birth_day'])
         member.phone = request.form['phone']
         member.gender = request.form['gender']
-        # 나머지 필드들도 같은 방식으로 업데이트
         db.session.commit()
         return redirect(url_for('view_member', id=member.id))
     return render_template('edit_member.html', member=member)
-
-@app.route('/member/<int:id>/delete', methods=['POST'])
-def delete_member(id):
-    member = Member.query.get_or_404(id)
-    db.session.delete(member)
-    db.session.commit()
-    return redirect(url_for('index'))
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -149,17 +175,15 @@ def get_members():
     per_page = request.args.get('per_page', 10, type=int)
     query = Member.query
 
-    # 필터링
     for field in ['gender', 'district', 'position']:
         value = request.args.get(field)
         if value:
             query = query.filter(getattr(Member, field) == value)
 
-    # 정렬
     sort_by = request.args.get('sort_by', 'name')
     sort_order = request.args.get('sort_order', 'asc')
     if sort_order == 'desc':
-        query = query.order_by(desc(getattr(Member, sort_by)))
+        query = query.order_by(db.desc(getattr(Member, sort_by)))
     else:
         query = query.order_by(getattr(Member, sort_by))
 
@@ -223,11 +247,22 @@ def login():
     email = data.get('email')
     password = data.get('password')
     
+    print(f"Login attempt: email={email}")  # 로그 추가
+    
     user = User.query.filter_by(email=email).first()
     if user and user.check_password(password):
         session['user_id'] = user.id
-        return jsonify({"message": "로그인 성공", "user_id": user.id}), 200
+        print(f"Login successful: user_id={user.id}, role={user.role}")  # 로그 추가
+        return jsonify({
+            "message": "로그인 성공", 
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role.value
+            }
+        }), 200
     
+    print("Login failed: Invalid email or password")  # 로그 추가
     return jsonify({"message": "이메일 또는 비밀번호가 잘못되었습니다"}), 401
 
 @app.route('/api/auth/signup', methods=['POST'])
@@ -267,7 +302,6 @@ def update_member(id):
     data = request.json
     for key, value in data.items():
         if key == 'photo' and value:
-            # Base64 이미지 데이터를 파일로 저장
             image_data = base64.b64decode(value)
             filename = f"member_{id}_photo.jpg"
             with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as f:
@@ -278,10 +312,53 @@ def update_member(id):
     db.session.commit()
     return jsonify({"message": "회원 정보가 성공적으로 수정되었습니다."})
 
-# 정적 파일 서빙을 위한 라우트 추가
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+@app.route('/api/members/<int:id>', methods=['DELETE'])
+def delete_member(id):
+    try:
+        member = Member.query.get(id)
+        if not member:
+            return jsonify({"error": "회원을 찾을 수 없습니다."}), 404
+        
+        db.session.delete(member)
+        db.session.commit()
+        return jsonify({"message": "회원이 성공적으로 삭제되었습니다."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def get_users():
+    users = User.query.all()
+    return jsonify([user.to_dict() for user in users]), 200
+
+@app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
+@super_admin_required
+def update_user_role(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.json
+    if 'role' in data and data['role'] in UserRole.__members__:
+        user.role = UserRole[data['role']]
+        db.session.commit()
+        return jsonify(user.to_dict()), 200
+    return jsonify({"error": "Invalid role"}), 400
+
+def create_super_admin():
+    with app.app_context():
+        super_admin_email = 'yjm0825@gmail.com'
+        super_admin = User.query.filter_by(email=super_admin_email).first()
+        if not super_admin:
+            super_admin = User(email=super_admin_email, role=UserRole.SUPER_ADMIN)
+            super_admin.set_password('초기비밀번호')  # 안전한 초기 비밀번호를 설정하세요
+            db.session.add(super_admin)
+        else:
+            super_admin.role = UserRole.SUPER_ADMIN
+        db.session.commit()
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    create_super_admin()
+    app.run(port=5001)

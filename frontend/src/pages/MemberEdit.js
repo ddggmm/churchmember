@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import axios from '../utils/axiosConfig';
 import Webcam from 'react-webcam';
 import { FaCamera } from 'react-icons/fa';
+import { useAuth } from '../contexts/AuthContext';
 
 function MemberEdit() {
   const [searchName, setSearchName] = useState('');
@@ -33,7 +34,7 @@ function MemberEdit() {
       const response = await axios.get(`/api/members/${member.id}`);
       const memberData = response.data;
       
-      console.log('서버��서 받아온 회원 데이터:', memberData);
+      console.log('서버서 받아온 회원 데이터:', memberData);
       
       // 생년월일 처리
       const birth_year = memberData.birthYear ? memberData.birthYear.toString() : '';

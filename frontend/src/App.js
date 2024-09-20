@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Header from './components/Header';
 import Login from './pages/Login';
@@ -8,6 +8,12 @@ import MemberRegistration from './pages/MemberRegistration';
 import MemberListPage from './pages/MemberListPage';
 import MemberEdit from './pages/MemberEdit';
 import MemberDetail from './pages/MemberDetail';
+import AdminUserManagement from './pages/AdminUserManagement';
+
+function PrivateRoute({ children }) {
+  const { isLoggedIn } = useAuth();
+  return isLoggedIn ? children : <Navigate to="/login" />;
+}
 
 function AppContent() {
   const { isLoggedIn } = useAuth();
@@ -17,12 +23,13 @@ function AppContent() {
       {isLoggedIn && <Header />}
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={isLoggedIn ? <Home /> : <Login />} />
-        <Route path="/members" element={isLoggedIn ? <MemberListPage /> : <Login />} />
-        <Route path="/members/:id" element={isLoggedIn ? <MemberDetail /> : <Login />} />
-        <Route path="/member-registration" element={isLoggedIn ? <MemberRegistration /> : <Login />} />
-        <Route path="/edit" element={isLoggedIn ? <MemberEdit /> : <Login />} />
-        <Route path="/members/search" element={isLoggedIn ? <MemberListPage /> : <Login />} />
+        <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
+        <Route path="/members" element={<PrivateRoute><MemberListPage /></PrivateRoute>} />
+        <Route path="/members/:id" element={<PrivateRoute><MemberDetail /></PrivateRoute>} />
+        <Route path="/member-registration" element={<PrivateRoute><MemberRegistration /></PrivateRoute>} />
+        <Route path="/edit" element={<PrivateRoute><MemberEdit /></PrivateRoute>} />
+        <Route path="/members/search" element={<PrivateRoute><MemberListPage /></PrivateRoute>} />
+        <Route path="/admin/users" element={<PrivateRoute><AdminUserManagement /></PrivateRoute>} />
       </Routes>
     </div>
   );

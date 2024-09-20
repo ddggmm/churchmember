@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { FaHome } from 'react-icons/fa';
+import { FaHome, FaUserCog } from 'react-icons/fa';
 
 function Header() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
 
   return (
     <header className="p-4 bg-gray-100">
@@ -22,6 +22,11 @@ function Header() {
             <Link to="/member-registration" className="hover:text-blue-500">신규등록</Link>
             <Link to="/edit" className="hover:text-blue-500">등록수정</Link>
             <Link to="/members" className="hover:text-blue-500">목록보기</Link>
+            {user && (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
+              <Link to="/admin/users" className="flex items-center hover:text-blue-500">
+                <FaUserCog className="mr-1" /> 사용자 관리
+              </Link>
+            )}
             <button onClick={logout} className="hover:text-blue-500">로그아웃</button>
           </nav>
         </div>

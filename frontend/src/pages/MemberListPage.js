@@ -4,6 +4,12 @@ import { FaPrint, FaFileDownload, FaList } from 'react-icons/fa';
 import { useLocation } from 'react-router-dom';
 import './MemberListPage.css';
 
+const getFullImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${process.env.REACT_APP_API_URL}${url}`;
+};
+
 function MemberListPage() {
   const location = useLocation();
   const searchResults = location.state?.searchResults;
@@ -32,6 +38,7 @@ function MemberListPage() {
     try {
       const response = await axios.get('/api/members');
       console.log('API 응답:', response.data);
+      console.log('첫 번째 회원 데이터:', response.data.members[0]);
       setMemberData({
         members: response.data.members,
         currentPage: response.data.current_page,
@@ -40,14 +47,14 @@ function MemberListPage() {
       setError(null);
     } catch (error) {
       console.error('멤버 정보를 불러오는 중 오류 발생:', error);
-      setError('멤버 정보를 불러오는 중 오류가 발생습니다.');
+      setError('멤버 정보를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handlePrint = () => {
-    // 인쇄 기능 구현 예정
+    // 인쇄 기능 구��� 예정
     console.log('인쇄 기능이 호출되었습니다.');
   };
 
@@ -65,6 +72,11 @@ function MemberListPage() {
       (!filters.position || member.position.toLowerCase().includes(filters.position.toLowerCase()))
     );
   });
+
+  const handleImageError = (e) => {
+    e.target.onerror = null;
+    e.target.src = '/default-profile.png'; // 기본 이미지 경로로 변경하세요
+  };
 
   return (
     <div className="member-list-container">
@@ -158,16 +170,17 @@ function MemberListPage() {
                   <td>{member.zipcode}</td>
                   <td>{member.district}</td>
                   <td>
-                    {member.photo ? (
+                    {member.photoUrl ? (
                       <div className="photo-container">
                         <img 
-                          src={member.photo} 
-                          alt={member.name} 
+                          src={getFullImageUrl(member.photoUrl)} 
+                          alt={`${member.name}의 사진`} 
                           className="member-photo-thumbnail" 
+                          onError={handleImageError}
                         />
                         <img 
-                          src={member.photo} 
-                          alt={member.name} 
+                          src={getFullImageUrl(member.photoUrl)} 
+                          alt={`${member.name}의 사진`} 
                           className="member-photo-full" 
                         />
                       </div>
