@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from '../utils/axiosConfig';
+import { useAuth } from '../contexts/AuthContext';
 import './MemberDetail.css';
 
 function MemberDetail() {
@@ -8,16 +9,17 @@ function MemberDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { id } = useParams();
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchMember = async () => {
       try {
         const response = await axios.get(`/api/members/${id}`);
-        console.log('API response:', response.data); // 응답 확인용
+        console.log('API response:', response.data);
         setMember(response.data);
         setLoading(false);
       } catch (err) {
-        console.error('API error:', err); // 에러 로깅
+        console.error('API error:', err);
         setError('회원 정보를 불러오는 데 실패했습니다.');
         setLoading(false);
       }
@@ -26,23 +28,34 @@ function MemberDetail() {
     fetchMember();
   }, [id]);
 
-  if (loading) return <div>로딩 중...</div>;
-  if (error) return <div>에러: {error}</div>;
-  if (!member) return <div>회원을 찾을 수 없습니다.</div>;
+  if (loading) return <div className="loading">로딩 중...</div>;
+  if (error) return <div className="error">에러: {error}</div>;
+  if (!member) return <div className="not-found">회원을 찾을 수 없습니다.</div>;
 
-  console.log('Member data:', member); // 데이터 확인용
+  // 수정: 모든 사용자가 인쇄할 수 있도록 변경
+  const canPrint = true;
+  
+  // 수정: ADMIN, SUPER_ADMIN, ELDER만 수정 가능
+  const canEdit = user && ['ADMIN', 'SUPER_ADMIN', 'ELDER'].includes(user.role);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleEdit = () => {
+    console.log('Edit member:', member.id);
+    // 여기에 수정 페이지로 이동하는 로직을 추가할 수 있습니다.
+  };
 
   return (
     <div className="member-detail">
-      <div className="flex flex-col items-start mb-4">
-        <div className="w-48 h-48 flex items-center justify-center overflow-hidden rounded-lg mb-2 bg-gray-100">
-          <img
-            src={member.photoUrl || '/default-profile.png'}
-            alt={`${member.name}의 프로필 사진`}
-            className="max-w-full max-h-full object-contain"
-          />
-        </div>
-        <h2 className="text-2xl font-bold">{member.name}</h2>
+      <div className="member-header">
+        <img
+          src={member.photoUrl || '/default-profile.png'}
+          alt={`${member.name}의 프로필 사진`}
+          className="member-photo"
+        />
+        <h2 className="member-name">{member.name}</h2>
       </div>
       <table className="member-info">
         <tbody>
@@ -80,6 +93,18 @@ function MemberDetail() {
           </tr>
         </tbody>
       </table>
+      <div className="button-container">
+        {canPrint && (
+          <button onClick={handlePrint} className="print-button">
+            인쇄하기
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={handleEdit} className="edit-button">
+            수정하기
+          </button>
+        )}
+      </div>
     </div>
   );
 }
