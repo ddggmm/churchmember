@@ -3,6 +3,23 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { FaHome, FaUserCog } from 'react-icons/fa';
 
+function getRoleName(role) {
+  switch(role) {
+    case 'ADMIN':
+      return '관리자';
+    case 'SUPER_ADMIN':
+      return '최고관리자';
+    case 'ELDER':
+      return '당회/교역자';
+    case 'LEADER':
+      return '구역장';
+    case 'MEMBER':
+      return '성도';
+    default:
+      return '손님';
+  }
+}
+
 function Header() {
   const { user, isLoggedIn, logout } = useAuth();
   const navigate = useNavigate();
@@ -34,7 +51,10 @@ function Header() {
               </Link>
             )}
             {isLoggedIn ? (
-              <button onClick={handleLogout} className="hover:text-blue-500">로그아웃</button>
+              <>
+                <button onClick={handleLogout} className="hover:text-blue-500">로그아웃</button>
+                <span className="text-gray-600">({getRoleName(user.role)})</span>
+              </>
             ) : (
               <Link to="/login" className="hover:text-blue-500">로그인</Link>
             )}
