@@ -1,10 +1,16 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { FaHome, FaUserCog } from 'react-icons/fa';
 
 function Header() {
-  const { user, logout } = useAuth();
+  const { user, isLoggedIn, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
     <header className="p-4 bg-gray-100">
@@ -27,7 +33,11 @@ function Header() {
                 <FaUserCog className="mr-1" /> 사용자 관리
               </Link>
             )}
-            <button onClick={logout} className="hover:text-blue-500">로그아웃</button>
+            {isLoggedIn ? (
+              <button onClick={handleLogout} className="hover:text-blue-500">로그아웃</button>
+            ) : (
+              <Link to="/login" className="hover:text-blue-500">로그인</Link>
+            )}
           </nav>
         </div>
       </div>

@@ -9,6 +9,7 @@ import MemberListPage from './pages/MemberListPage';
 import MemberEdit from './pages/MemberEdit';
 import MemberDetail from './pages/MemberDetail';
 import AdminUserManagement from './pages/AdminUserManagement';
+import PublicMemberList from './pages/PublicMemberList';
 
 function PrivateRoute({ children }) {
   const { isLoggedIn } = useAuth();
@@ -20,10 +21,10 @@ function AppContent() {
 
   return (
     <div className="App">
-      {isLoggedIn && <Header />}
+      <Header />
       <Routes>
+        <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
         <Route path="/members" element={<PrivateRoute><MemberListPage /></PrivateRoute>} />
         <Route path="/members/:id" element={<PrivateRoute><MemberDetail /></PrivateRoute>} />
         <Route path="/member-registration" element={<PrivateRoute><MemberRegistration /></PrivateRoute>} />

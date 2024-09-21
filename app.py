@@ -10,6 +10,7 @@ import base64
 from flask import send_from_directory
 from enum import Enum
 from functools import wraps
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 class UserRole(Enum):
     USER = 'user'
@@ -22,9 +23,11 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'instance', 'church_members.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key'  # 안전한 비밀키로 변경하세요
+app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key'  # 안전한 비밀키로 변경하세요
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+jwt = JWTManager(app)
 
 # Member 모델 정의
 class Member(db.Model):
@@ -197,6 +200,23 @@ def get_members():
         'current_page': page
     })
 
+@app.route('/api/members/public', methods=['GET'])
+def get_public_members():
+    try:
+        name = request.args.get('name', '')
+        members = Member.query.filter(Member.name.like(f'%{name}%')).all()
+        return jsonify([
+            {
+                'id': member.id,
+                'name': member.name,
+                'spouse': member.spouse,
+                'photoUrl': url_for('uploaded_file', filename=member.photo, _external=True) if member.photo else None
+            } for member in members
+        ])
+    except Exception as e:
+        print(f"Error in get_public_members: {str(e)}")  # 서버 콘솔에 에러 로깅
+        return jsonify({"error": "Internal server error"}), 500
+
 @app.route('/api/members/<int:id>', methods=['GET'])
 def get_member(id):
     member = Member.query.get_or_404(id)
@@ -247,22 +267,19 @@ def login():
     email = data.get('email')
     password = data.get('password')
     
-    print(f"Login attempt: email={email}")  # 로그 추가
-    
     user = User.query.filter_by(email=email).first()
     if user and user.check_password(password):
-        session['user_id'] = user.id
-        print(f"Login successful: user_id={user.id}, role={user.role}")  # 로그 추가
+        access_token = create_access_token(identity=user.id)
         return jsonify({
             "message": "로그인 성공", 
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "role": user.role.value
-            }
+            },
+            "access_token": access_token
         }), 200
     
-    print("Login failed: Invalid email or password")  # 로그 추가
     return jsonify({"message": "이메일 또는 비밀번호가 잘못되었습니다"}), 401
 
 @app.route('/api/auth/signup', methods=['POST'])
@@ -346,6 +363,27 @@ def update_user_role(user_id):
         db.session.commit()
         return jsonify(user.to_dict()), 200
     return jsonify({"error": "Invalid role"}), 400
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({"message": "로그아웃 성공"}), 200
+
+@app.route('/api/auth/check', methods=['GET'])
+@jwt_required()
+def check_auth():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if user:
+        return jsonify({
+            "isLoggedIn": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role.value
+            }
+        }), 200
+    return jsonify({"isLoggedIn": False}), 401
 
 def create_super_admin():
     with app.app_context():
