@@ -1,15 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from '../utils/axiosConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 
-function AdminUserManagement() {
+function UserManagement() {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchUsers = useCallback(async () => {
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -21,17 +25,12 @@ function AdminUserManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+  };
 
   const updateUserRole = async (userId, newRole) => {
     try {
-      setError(null);
       await axios.put(`/api/admin/users/${userId}/role`, { role: newRole });
-      fetchUsers();
+      fetchUsers(); // 역할 변경 후 사용자 목록 새로고침
     } catch (error) {
       console.error('역할 업데이트 실패:', error);
       setError('역할 업데이트에 실패했습니다.');
@@ -41,9 +40,8 @@ function AdminUserManagement() {
   const deleteUser = async (userId) => {
     if (window.confirm('정말로 이 사용자를 삭제하시겠습니까?')) {
       try {
-        setError(null);
         await axios.delete(`/api/admin/users/${userId}`);
-        fetchUsers();
+        fetchUsers(); // 사용자 삭제 후 목록 새로고침
       } catch (error) {
         console.error('사용자 삭제 실패:', error);
         setError('사용자 삭제에 실패했습니다.');
@@ -59,14 +57,9 @@ function AdminUserManagement() {
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">사용자 관리</h1>
       {isLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <p className="text-xl">로딩 중...</p>
-        </div>
+        <p>로딩 중...</p>
       ) : error ? (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">오류!</strong>
-          <span className="block sm:inline"> {error}</span>
-        </div>
+        <p className="text-red-500">{error}</p>
       ) : (
         <table className="w-full border-collapse border border-gray-300">
           <thead>
@@ -113,4 +106,4 @@ function AdminUserManagement() {
   );
 }
 
-export default AdminUserManagement;
+export default UserManagement;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axios from '../utils/axiosConfig';
 import { useNavigate, Link } from 'react-router-dom';
 
 function SignUp() {
@@ -18,6 +18,12 @@ function SignUp() {
     e.preventDefault();
     if (userData.password !== userData.confirmPassword) {
       alert('비밀번호가 일치하지 않습니다.');
+      return;
+    }
+    // 이메일 유효성 검사
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userData.email)) {
+      alert('유효한 이메일 주소를 입력해주세요.');
       return;
     }
     try {

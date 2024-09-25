@@ -1,10 +1,10 @@
 .member-detail {
   max-width: 800px;
-  margin: 0 auto;
+  margin: 60px auto; /* 상단 여백을 20px에서 60px로 증가 */
   padding: 20px;
   background-color: #f9f9f9;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* 그림자를 더 진하고 넓게 수정 */
 }
 
 .member-header {
@@ -52,4 +52,33 @@
 
 .error {
   color: red;
+}
+
+.button-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  gap: 10px;
+}
+
+.print-button, .edit-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.print-button {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.edit-button {
+  background-color: #008CBA;
+  color: white;
+}
+
+.print-button:hover, .edit-button:hover {
+  opacity: 0.8;
 }

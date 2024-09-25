@@ -11,6 +11,7 @@ from flask import send_from_directory
 from enum import Enum
 from functools import wraps
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+import re
 
 class UserRole(Enum):
     USER = 'user'
@@ -48,6 +49,9 @@ class Member(db.Model):
     gender = db.Column(db.String(10))
     spouse = db.Column(db.String(50))
     position = db.Column(db.String(50))
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    role = db.Column(db.String(20), default='회원')  # '최고 관리자', '당회 및 교역자', '구역장', '회원', '비회원'
+    is_active = db.Column(db.Boolean, default=False)
 
     def to_dict(self):
         return {
@@ -64,8 +68,17 @@ class Member(db.Model):
             'zipcode': self.zipcode,
             'district': self.district,
             'spouse': self.spouse,
-            'position': self.position
+            'position': self.position,
+            'email': self.email,
+            'role': self.role,
+            'is_active': self.is_active
         }
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 # User 모델 정의
 class User(db.Model):
@@ -194,7 +207,10 @@ def get_members():
     members = pagination.items
 
     return jsonify({
-        'members': [member.to_dict() for member in members],
+        'members': [{
+            **member.to_dict(),
+            'photoUrl': url_for('uploaded_file', filename=member.photo, _external=True) if member.photo else None
+        } for member in members],
         'total': pagination.total,
         'pages': pagination.pages,
         'current_page': page
@@ -229,8 +245,16 @@ def get_member(id):
 def create_member():
     data = request.json
     try:
+        email = data.get('email')
+        if not email or not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            return jsonify({"error": "유효한 이메일 주소를 입력해주세요."}), 400
+
+        if Member.query.filter_by(email=email).first():
+            return jsonify({"error": "이미 사용 중인 이메일 주소입니다."}), 400
+
         new_member = Member(
             name=data['name'],
+            email=email,
             register_date=datetime.now().date(),
             birth_year=int(data['birthYear']),
             birth_month=int(data['birthMonth']),
@@ -317,6 +341,15 @@ def search_members():
 def update_member(id):
     member = Member.query.get_or_404(id)
     data = request.json
+    
+    if 'email' in data:
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", data['email']):
+            return jsonify({"error": "유효한 이메일 주소를 입력해주세요."}), 400
+
+    if 'email' in data and data['email'] != member.email:
+        if Member.query.filter_by(email=data['email']).first():
+            return jsonify({"error": "이미 사용 중인 이메일 주소입니다."}), 400
+
     for key, value in data.items():
         if key == 'photo' and value:
             image_data = base64.b64decode(value)
@@ -385,9 +418,17 @@ def check_auth():
         }), 200
     return jsonify({"isLoggedIn": False}), 401
 
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@super_admin_required
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"message": "User deleted successfully"}), 200
+
 def create_super_admin():
     with app.app_context():
-        super_admin_email = 'yjm0825@gmail.com'
+        super_admin_email = 'yjm0825@gmail.com'  # 당신의 이메일
         super_admin = User.query.filter_by(email=super_admin_email).first()
         if not super_admin:
             super_admin = User(email=super_admin_email, role=UserRole.SUPER_ADMIN)
@@ -396,6 +437,15 @@ def create_super_admin():
         else:
             super_admin.role = UserRole.SUPER_ADMIN
         db.session.commit()
+        print(f"Super admin {super_admin_email} has been created or updated.")
+
+@app.cli.command("update_null_emails")
+def update_null_emails():
+    members = Member.query.filter(Member.email == None).all()
+    for member in members:
+        member.email = f"unknown_{member.id}@example.com"
+    db.session.commit()
+    print(f"Updated {len(members)} members with null emails.")
 
 if __name__ == '__main__':
     create_super_admin()

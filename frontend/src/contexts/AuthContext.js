@@ -11,10 +11,13 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     try {
       const response = await axios.post('/api/auth/login', { email, password });
-      const { user } = response.data;
-      setUser(user);
+      const { user, access_token } = response.data;
+      const updatedUser = { ...user, role: user.role.toUpperCase() };
+      setUser(updatedUser);
       setIsLoggedIn(true);
       localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('access_token', access_token);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
     } catch (error) {
       console.error('로그인 실패:', error);
       throw error;
@@ -30,16 +33,21 @@ export function AuthProvider({ children }) {
       setUser(null);
       setIsLoggedIn(false);
       localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('access_token');
+      delete axios.defaults.headers.common['Authorization'];
     }
   }, []);
 
   const checkAuth = useCallback(async () => {
     const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-    if (isLoggedIn) {
+    const token = localStorage.getItem('access_token');
+    if (isLoggedIn && token) {
       try {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         const response = await axios.get('/api/auth/check');
         if (response.data.isLoggedIn) {
-          setUser(response.data.user);
+          const updatedUser = { ...response.data.user, role: response.data.user.role.toUpperCase() };
+          setUser(updatedUser);
           setIsLoggedIn(true);
         } else {
           throw new Error('Not logged in');
@@ -49,6 +57,8 @@ export function AuthProvider({ children }) {
         setUser(null);
         setIsLoggedIn(false);
         localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('access_token');
+        delete axios.defaults.headers.common['Authorization'];
       }
     } else {
       setUser(null);

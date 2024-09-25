@@ -148,6 +148,15 @@ function MemberEdit() {
               <p><strong>구역:</strong> {selectedMember.district}</p>
               <p><strong>배우자:</strong> {selectedMember.spouse}</p>
               <p><strong>직분:</strong> {selectedMember.position}</p>
+              <input 
+                type="email" 
+                name="email" 
+                value={selectedMember.email} 
+                onChange={handleChange} 
+                placeholder="이메일" 
+                className="border p-2" 
+                required 
+              />
             </div>
           </div>
           {!isEditing ? (

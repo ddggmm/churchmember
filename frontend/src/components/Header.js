@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { FaHome, FaUserCog } from 'react-icons/fa';
 
 function getRoleName(role) {
-  switch(role) {
+  switch(role.toUpperCase()) {
     case 'ADMIN':
       return '관리자';
     case 'SUPER_ADMIN':
@@ -22,11 +22,18 @@ function getRoleName(role) {
 
 function Header() {
   const { user, isLoggedIn, logout } = useAuth();
+  console.log('Current user:', user);
+  console.log('Is logged in:', isLoggedIn);
+  
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  const getRoleStyle = (role) => {
+    return role.toUpperCase() === 'SUPER_ADMIN' ? 'text-blue-500 font-bold' : 'text-gray-600';
   };
 
   return (
@@ -45,15 +52,15 @@ function Header() {
             <Link to="/member-registration" className="hover:text-blue-500">신규등록</Link>
             <Link to="/edit" className="hover:text-blue-500">등록수정</Link>
             <Link to="/members" className="hover:text-blue-500">목록보기</Link>
-            {user && (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
-              <Link to="/admin/users" className="flex items-center hover:text-blue-500">
-                <FaUserCog className="mr-1" /> 사용자 관리
-              </Link>
-            )}
             {isLoggedIn ? (
               <>
                 <button onClick={handleLogout} className="hover:text-blue-500">로그아웃</button>
-                <span className="text-gray-600">({getRoleName(user.role)})</span>
+                <span className={getRoleStyle(user.role)}>({getRoleName(user.role)})</span>
+                {(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
+                  <Link to="/admin" className="flex items-center hover:text-blue-500">
+                    <FaUserCog className="mr-1" /> 관리자 페이지
+                  </Link>
+                )}
               </>
             ) : (
               <Link to="/login" className="hover:text-blue-500">로그인</Link>
