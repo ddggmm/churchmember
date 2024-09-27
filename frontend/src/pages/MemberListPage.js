@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from '../utils/axiosConfig';
-import { FaPrint, FaFileDownload, FaList, FaFilter } from 'react-icons/fa';
+import { FaPrint, FaFileDownload, FaList, FaFilter, FaEraser } from 'react-icons/fa';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './MemberListPage.css';
@@ -27,6 +27,11 @@ function MemberListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { isLoggedIn } = useAuth();
   const [isSimpleView, setIsSimpleView] = useState(false);
+  const [uniqueValues, setUniqueValues] = useState({
+    cities: [],
+    districts: [],
+    positions: []
+  });
 
   console.log('로그인 상태:', isLoggedIn);
 
@@ -44,6 +49,20 @@ function MemberListPage() {
   useEffect(() => {
     console.log('Filters changed:', filters);
   }, [filters]);
+
+  useEffect(() => {
+    if (memberData.members.length > 0) {
+      const cities = [...new Set(memberData.members.map(member => member.city))];
+      const districts = [...new Set(memberData.members.map(member => member.district))];
+      const positions = [...new Set(memberData.members.map(member => member.position))];
+      
+      setUniqueValues({
+        cities: cities.filter(Boolean),
+        districts: districts.filter(Boolean),
+        positions: positions.filter(Boolean)
+      });
+    }
+  }, [memberData.members]);
 
   const fetchMembers = async () => {
     setIsLoading(true);
@@ -160,27 +179,50 @@ function MemberListPage() {
   };
 
   const handleExport = () => {
-    const dataToExport = filteredMembers.map(member => ({
-      ID: member.id,
-      이름: member.name,
-      생년: member.birthYear,
-      생월: member.birthMonth,
-      생일: member.birthDay,
-      전화번호: member.phone,
-      주소: member.address,
-      도시: member.city,
-      주: member.state,
-      우편번호: member.zipcode,
-      구역: member.district,
-      성별: member.gender,
-      배우자: member.spouse,
-      직분: member.position
-    }));
+    let dataToExport;
+    if (isSimpleView) {
+      dataToExport = filteredMembers.map(member => ({
+        ID: member.id,
+        이름: member.name,
+        생년월일: `${member.birthYear}-${member.birthMonth}-${member.birthDay}`,
+        전화번호: member.phone,
+        구역: member.district
+      }));
+    } else {
+      dataToExport = filteredMembers.map(member => ({
+        ID: member.id,
+        이름: member.name,
+        생년: member.birthYear,
+        생월: member.birthMonth,
+        생일: member.birthDay,
+        전화번호: member.phone,
+        주소: member.address,
+        도시: member.city,
+        주: member.state,
+        우편번호: member.zipcode,
+        구역: member.district,
+        성별: member.gender,
+        배우자: member.spouse,
+        직분: member.position
+      }));
+    }
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     XLSX.utils.book_append_sheet(wb, ws, "회원목록");
-    XLSX.writeFile(wb, "회원목록.xlsx");
+    
+    // 열 너비 자동 조정
+    const colWidths = dataToExport.reduce((widths, row) => {
+      Object.keys(row).forEach((key, index) => {
+        const value = row[key] ? row[key].toString() : '';
+        widths[index] = Math.max(widths[index] || 0, value.length);
+      });
+      return widths;
+    }, {});
+    
+    ws['!cols'] = Object.keys(colWidths).map(key => ({ wch: colWidths[key] }));
+
+    XLSX.writeFile(wb, `회원목록_${isSimpleView ? '간략' : '상'}.xlsx`);
   };
 
   const filteredMembers = memberData.members.filter(member => {
@@ -201,6 +243,8 @@ function MemberListPage() {
       district: '',
       position: ''
     });
+    // 모든 회원 데이터를 다시 불러오는 함수 호출
+    fetchMembers();
   };
 
   const toggleView = () => {
@@ -208,11 +252,55 @@ function MemberListPage() {
   };
 
   const handleFilterChange = (filter, value) => {
-    setFilters(prevFilters => ({ ...prevFilters, [filter]: value }));
+    setFilters(prevFilters => {
+      const newFilters = { ...prevFilters, [filter]: value };
+      applyFilters(newFilters);
+      return newFilters;
+    });
   };
 
-  const handleFilterApply = () => {
-    // 필터 적용 로직
+  const applyFilters = (currentFilters) => {
+    const filteredMembers = memberData.members.filter(member => {
+      return (
+        (!currentFilters.birthYear || member.birthYear === parseInt(currentFilters.birthYear)) &&
+        (!currentFilters.birthMonth || member.birthMonth === parseInt(currentFilters.birthMonth)) &&
+        (!currentFilters.city || (member.city && member.city.toLowerCase().includes(currentFilters.city.toLowerCase()))) &&
+        (!currentFilters.district || (member.district && member.district.toLowerCase().includes(currentFilters.district.toLowerCase()))) &&
+        (!currentFilters.position || (member.position && member.position.toLowerCase().includes(currentFilters.position.toLowerCase())))
+      );
+    });
+    setMemberData(prevData => ({ ...prevData, members: filteredMembers }));
+  };
+
+  const tableRef = useRef(null);
+
+  useEffect(() => {
+    adjustFontSize();
+    window.addEventListener('resize', adjustFontSize);
+    return () => window.removeEventListener('resize', adjustFontSize);
+  }, [memberData.members]); // memberData.members가 변경될 때마다 실행
+
+  const adjustFontSize = () => {
+    const table = tableRef.current;
+    if (!table) return;
+
+    const cells = table.querySelectorAll('td');
+    cells.forEach(cell => {
+      let fontSize = 14; // 초기 폰트 크기
+      cell.style.fontSize = `${fontSize}px`;
+
+      while (cell.scrollWidth > cell.offsetWidth && fontSize > 8) {
+        fontSize--;
+        cell.style.fontSize = `${fontSize}px`;
+      }
+    });
+  };
+
+  const handleMouseEnter = (event) => {
+    const hoverElement = event.currentTarget.querySelector('.photo-hover');
+    const rect = event.currentTarget.getBoundingClientRect();
+    hoverElement.style.top = `${rect.top - 220}px`;
+    hoverElement.style.left = `${rect.right + 10}px`;
   };
 
   return (
@@ -223,7 +311,10 @@ function MemberListPage() {
             <h2>성도 목록</h2>
             <div className="member-list-controls">
               <div className="view-controls">
-                <button onClick={toggleView} className="btn btn-primary">
+                <button 
+                  onClick={toggleView} 
+                  className={`btn btn-toggle ${isSimpleView ? 'detailed' : ''}`}
+                >
                   <FaList /> {isSimpleView ? '상세보기' : '간략보기'}
                 </button>
                 <button onClick={handlePrint} className="btn btn-secondary">
@@ -257,32 +348,41 @@ function MemberListPage() {
                   ))}
                 </select>
                 
-                <input 
-                  type="text" 
-                  placeholder="도시" 
+                <select 
                   value={filters.city} 
                   onChange={(e) => handleFilterChange('city', e.target.value)}
-                  className="form-input"
-                />
+                  className="form-select"
+                >
+                  <option value="">도시 선택</option>
+                  {uniqueValues.cities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
                 
-                <input 
-                  type="text" 
-                  placeholder="구역" 
+                <select 
                   value={filters.district} 
                   onChange={(e) => handleFilterChange('district', e.target.value)}
-                  className="form-input"
-                />
+                  className="form-select"
+                >
+                  <option value="">구역 선택</option>
+                  {uniqueValues.districts.map(district => (
+                    <option key={district} value={district}>{district}</option>
+                  ))}
+                </select>
                 
-                <input 
-                  type="text" 
-                  placeholder="직분" 
+                <select 
                   value={filters.position} 
                   onChange={(e) => handleFilterChange('position', e.target.value)}
-                  className="form-input"
-                />
+                  className="form-select"
+                >
+                  <option value="">직분 선택</option>
+                  {uniqueValues.positions.map(position => (
+                    <option key={position} value={position}>{position}</option>
+                  ))}
+                </select>
                 
-                <button onClick={handleFilterApply} className="btn btn-primary">
-                  <FaFilter /> 필터 적용
+                <button onClick={resetFilters} className="btn btn-secondary">
+                  <FaEraser /> 필터값 지우기
                 </button>
               </div>
             </div>
@@ -292,85 +392,105 @@ function MemberListPage() {
             {isLoading ? (
               <p>로딩 중...</p>
             ) : filteredMembers.length > 0 ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>사진</th>
-                    <th>이름</th>
-                    {isSimpleView ? (
-                      <>
-                        <th>생년월일</th>
-                        <th>전화번호</th>
-                        <th>구역</th>
-                      </>
-                    ) : (
-                      <>
-                        <th>생년</th>
-                        <th>생월</th>
-                        <th>생일</th>
-                        <th>전화번호</th>
-                        <th>주소</th>
-                        <th>도시</th>
-                        <th>주</th>
-                        <th>우편번호</th>
-                        <th>구역</th>
-                        <th>성별</th>
-                        <th>배우자</th>
-                        <th>직분</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMembers.map(member => (
-                    <tr key={member.id}>
-                      <td>{member.id}</td>
-                      <td className="photo-cell">
-                        {member.photoUrl && (
-                          <div className="photo-container">
+              isSimpleView ? (
+                <table ref={tableRef} className="member-list simple">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>사진</th>
+                      <th>이름</th>
+                      <th>생년월일</th>
+                      <th>전화번호</th>
+                      <th>구역</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMembers.map(member => (
+                      <tr key={member.id}>
+                        <td>{member.id}</td>
+                        <td>
+                          <div className="photo-container" onMouseEnter={handleMouseEnter}>
                             <img 
-                              src={getFullImageUrl(member.photoUrl)} 
+                              src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
                               alt={member.name} 
                               className="member-photo-thumbnail"
                             />
                             <div className="photo-hover">
                               <img 
-                                src={getFullImageUrl(member.photoUrl)} 
+                                src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
                                 alt={member.name} 
                                 className="member-photo-large"
                               />
                             </div>
                           </div>
-                        )}
-                      </td>
-                      <td>{member.name}</td>
-                      {isSimpleView ? (
-                        <>
-                          <td>{`${member.birthYear}-${member.birthMonth}-${member.birthDay}`}</td>
-                          <td>{member.phone}</td>
-                          <td>{member.district}</td>
-                        </>
-                      ) : (
-                        <>
-                          <td>{member.birthYear}</td>
-                          <td>{member.birthMonth}</td>
-                          <td>{member.birthDay}</td>
-                          <td>{member.phone}</td>
-                          <td>{member.address}</td>
-                          <td>{member.city}</td>
-                          <td>{member.state}</td>
-                          <td>{member.zipcode}</td>
-                          <td>{member.district}</td>
-                          <td>{member.gender}</td>
-                          <td>{member.spouse}</td>
-                          <td>{member.position}</td>
-                        </>
-                      )}
+                        </td>
+                        <td>{member.name}</td>
+                        <td>{`${member.birthYear}-${member.birthMonth}-${member.birthDay}`}</td>
+                        <td>{member.phone}</td>
+                        <td>{member.district}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table ref={tableRef} className="member-list detailed">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>사진</th>
+                      <th>이름</th>
+                      <th>생년</th>
+                      <th>생월</th>
+                      <th>생일</th>
+                      <th>전화번호</th>
+                      <th>주소</th>
+                      <th>도시</th>
+                      <th>주</th>
+                      <th>우편번호</th>
+                      <th>구역</th>
+                      <th>성별</th>
+                      <th>배우자</th>
+                      <th>직분</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredMembers.map(member => (
+                      <tr key={member.id}>
+                        <td>{member.id}</td>
+                        <td>
+                          <div className="photo-container" onMouseEnter={handleMouseEnter}>
+                            <img 
+                              src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
+                              alt={member.name} 
+                              className="member-photo-thumbnail"
+                            />
+                            <div className="photo-hover">
+                              <img 
+                                src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
+                                alt={member.name} 
+                                className="member-photo-large"
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td>{member.name}</td>
+                        <td>{member.birthYear}</td>
+                        <td>{member.birthMonth}</td>
+                        <td>{member.birthDay}</td>
+                        <td>{member.phone}</td>
+                        <td>{member.address}</td>
+                        <td>{member.city}</td>
+                        <td>{member.state}</td>
+                        <td>{member.zipcode}</td>
+                        <td>{member.district}</td>
+                        <td>{member.gender}</td>
+                        <td>{member.spouse}</td>
+                        <td>{member.position}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
             ) : (
               <p>표시할 회원이 없습니다.</p>
             )}
