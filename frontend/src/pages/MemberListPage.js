@@ -27,20 +27,38 @@ function MemberListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { isLoggedIn } = useAuth();
 
+  console.log('로그인 상태:', isLoggedIn);  // 여기에 추가합니다.
+
   useEffect(() => {
+    console.log('useEffect 실행');
     if (searchResults) {
+      console.log('searchResults 사용');
       setMemberData({ members: searchResults, currentPage: 1, totalPages: 1 });
     } else {
+      console.log('fetchMembers 호출');
       fetchMembers();
     }
   }, [searchResults]);
 
+  useEffect(() => {
+    console.log('Filters changed:', filters);
+    // 필요한 경우 여기에 추가 로직을 넣을 수 있습니다.
+  }, [filters]);
+
   const fetchMembers = async () => {
     setIsLoading(true);
     try {
+      console.log('API 호출 시작');
       const response = await axios.get('/api/members');
+      console.log('API 응답:', JSON.stringify(response.data, null, 2));
+      console.log('첫 번째 회원 데이터:', JSON.stringify(response.data.members[0], null, 2));
       setMemberData({
-        members: response.data.members,
+        members: response.data.members.map(member => ({
+          ...member,
+          birthYear: member.birthYear,
+          birthMonth: member.birthMonth,
+          birthDay: member.birthDay
+        })),
         currentPage: response.data.current_page,
         totalPages: response.data.pages
       });
@@ -50,6 +68,7 @@ function MemberListPage() {
       setError('멤버 정보를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
+      console.log('API 호출 완료');
     }
   };
 
@@ -65,17 +84,27 @@ function MemberListPage() {
 
   const filteredMembers = memberData.members.filter(member => {
     return (
-      (!filters.birthYear || member.birth_year === parseInt(filters.birthYear)) &&
-      (!filters.birthMonth || member.birth_month === parseInt(filters.birthMonth)) &&
-      (!filters.city || member.city.toLowerCase().includes(filters.city.toLowerCase())) &&
-      (!filters.district || member.district.toLowerCase().includes(filters.district.toLowerCase())) &&
-      (!filters.position || member.position.toLowerCase().includes(filters.position.toLowerCase()))
+      (!filters.birthYear || member.birthYear === parseInt(filters.birthYear)) &&
+      (!filters.birthMonth || member.birthMonth === parseInt(filters.birthMonth)) &&
+      (!filters.city || (member.city && member.city.toLowerCase().includes(filters.city.toLowerCase()))) &&
+      (!filters.district || (member.district && member.district.toLowerCase().includes(filters.district.toLowerCase()))) &&
+      (!filters.position || (member.position && member.position.toLowerCase().includes(filters.position.toLowerCase())))
     );
   });
 
   const handleImageError = (e) => {
     e.target.onerror = null;
     e.target.src = '/default-profile.png'; // 기본 이미지 경로로 변경하세요
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      birthYear: '',
+      birthMonth: '',
+      city: '',
+      district: '',
+      position: ''
+    });
   };
 
   return (
@@ -94,6 +123,7 @@ function MemberListPage() {
               <button onClick={handleExport}>
                 <FaFileDownload /> 파일저장
               </button>
+              <button onClick={resetFilters}>필터 초기화</button>
             </div>
           </div>
           <div className="filter-container">
@@ -145,7 +175,9 @@ function MemberListPage() {
                     <th>ID</th>
                     <th>등록일</th>
                     <th>이름</th>
-                    <th>생년월일</th>
+                    <th>생년</th>
+                    <th>생월</th>
+                    <th>생일</th>
                     <th>전화번호</th>
                     <th>주소</th>
                     <th>도시</th>
@@ -164,7 +196,9 @@ function MemberListPage() {
                       <td>{member.id}</td>
                       <td>{member.register_date}</td>
                       <td>{member.name}</td>
-                      <td>{`${member.birth_year || ''}-${member.birth_month || ''}-${member.birth_day || ''}`}</td>
+                      <td>{member.birthYear || ''}</td>
+                      <td>{member.birthMonth || ''}</td>
+                      <td>{member.birthDay || ''}</td>
                       <td>{member.phone}</td>
                       <td>{member.address}</td>
                       <td>{member.city}</td>
