@@ -10,25 +10,32 @@ import base64
 from flask import send_from_directory
 from enum import Enum
 from functools import wraps
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, create_refresh_token, jwt_refresh_token_required, get_jti, get_jwt
 import re
+import redis
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class UserRole(Enum):
-    USER = 'user'
-    ADMIN = 'admin'
-    SUPER_ADMIN = 'super_admin'
+    USER = 'USER'
+    ADMIN = 'ADMIN'
+    SUPER_ADMIN = 'SUPER_ADMIN'
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'instance', 'church_members.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your_secret_key'  # 안전한 비밀키로 변경하세요
-app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key'  # 안전한 비밀키로 변경하세요
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 jwt = JWTManager(app)
+
+# 토큰 블랙리스트를 위한 Redis 설정 (또는 다른 저장소 사용)
+jwt_redis_blocklist = redis.StrictRedis(host="localhost", port=6379, db=0, decode_responses=True)
 
 # Member 모델 정의
 class Member(db.Model):
@@ -97,7 +104,7 @@ class User(db.Model):
         return {
             'id': self.id,
             'email': self.email,
-            'role': self.role.value
+            'role': self.role.value  # Enum 값을 문자열로 반환
         }
 
 UPLOAD_FOLDER = 'uploads'
@@ -108,27 +115,31 @@ app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__fil
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            abort(401)
-        user = User.query.get(session['user_id'])
-        if not user or user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
-            abort(403)
-        return f(*args, **kwargs)
-    return decorated_function
+def admin_required():
+    def wrapper(fn):
+        @wraps(fn)
+        @jwt_required()
+        def decorator(*args, **kwargs):
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            if not user or user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+                return jsonify({"error": "관리자 권한이 필요합니다."}), 403
+            return fn(*args, **kwargs)
+        return decorator
+    return wrapper
 
-def super_admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            abort(401)
-        user = User.query.get(session['user_id'])
-        if not user or user.role != UserRole.SUPER_ADMIN:
-            abort(403)
-        return f(*args, **kwargs)
-    return decorated_function
+def super_admin_required():
+    def wrapper(fn):
+        @wraps(fn)
+        @jwt_required()
+        def decorator(*args, **kwargs):
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            if not user or user.role != UserRole.SUPER_ADMIN:
+                return jsonify({"error": "최고 관리자 권한이 필요합니다."}), 403
+            return fn(*args, **kwargs)
+        return decorator
+    return wrapper
 
 @app.route('/')
 def index():
@@ -294,23 +305,26 @@ def login():
     user = User.query.filter_by(email=email).first()
     if user and user.check_password(password):
         access_token = create_access_token(identity=user.id)
+        refresh_token = create_refresh_token(identity=user.id)
         return jsonify({
-            "message": "로그인 성공", 
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "role": user.role.value
-            },
-            "access_token": access_token
+            'user': user.to_dict(),
+            'access_token': access_token,
+            'refresh_token': refresh_token
         }), 200
     
     return jsonify({"message": "이메일 또는 비밀번호가 잘못되었습니다"}), 401
+
+def is_password_valid(password):
+    return len(password) >= 8 and any(c.isdigit() for c in password) and any(c.isalpha() for c in password)
 
 @app.route('/api/auth/signup', methods=['POST'])
 def signup():
     data = request.json
     email = data.get('email')
     password = data.get('password')
+    
+    if not is_password_valid(password):
+        return error_response("비밀번호는 8자 이상이며, 숫자와 문자를 모두 포함해야 합니다.", 400)
     
     if User.query.filter_by(email=email).first():
         return jsonify({"message": "이미 존재하는 이메일입니다"}), 400
@@ -337,18 +351,24 @@ def search_members():
         } for member in members
     ])
 
+def error_response(message, status_code):
+    response = jsonify({"error": message})
+    response.status_code = status_code
+    return response
+
 @app.route('/api/members/<int:id>', methods=['PUT'])
+@jwt_required()
 def update_member(id):
     member = Member.query.get_or_404(id)
     data = request.json
     
     if 'email' in data:
         if not re.match(r"[^@]+@[^@]+\.[^@]+", data['email']):
-            return jsonify({"error": "유효한 이메일 주소를 입력해주세요."}), 400
+            return error_response("유효한 이메일 주소를 입력해주세요.", 400)
 
     if 'email' in data and data['email'] != member.email:
         if Member.query.filter_by(email=data['email']).first():
-            return jsonify({"error": "이미 사용 중인 이메일 주소입니다."}), 400
+            return error_response("이미 사용 중인 이메일 주소입니다.", 400)
 
     for key, value in data.items():
         if key == 'photo' and value:
@@ -398,8 +418,10 @@ def update_user_role(user_id):
     return jsonify({"error": "Invalid role"}), 400
 
 @app.route('/api/auth/logout', methods=['POST'])
+@jwt_required
 def logout():
-    session.clear()
+    jti = get_jwt()['jti']
+    jwt_redis_blocklist.set(jti, '', ex=3600)  # 1시간 동안 블랙리스트 추가
     return jsonify({"message": "로그아웃 성공"}), 200
 
 @app.route('/api/auth/check', methods=['GET'])
@@ -428,11 +450,12 @@ def delete_user(user_id):
 
 def create_super_admin():
     with app.app_context():
-        super_admin_email = 'yjm0825@gmail.com'  # 당신의 이메일
+        super_admin_email = os.getenv('SUPER_ADMIN_EMAIL')
+        super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD')
         super_admin = User.query.filter_by(email=super_admin_email).first()
         if not super_admin:
             super_admin = User(email=super_admin_email, role=UserRole.SUPER_ADMIN)
-            super_admin.set_password('초기비밀번호')  # 안전한 초기 비밀번호를 설정하세요
+            super_admin.set_password(super_admin_password)
             db.session.add(super_admin)
         else:
             super_admin.role = UserRole.SUPER_ADMIN
@@ -446,6 +469,29 @@ def update_null_emails():
         member.email = f"unknown_{member.id}@example.com"
     db.session.commit()
     print(f"Updated {len(members)} members with null emails.")
+
+@app.route('/api/auth/refresh', methods=['POST'])
+@jwt_refresh_token_required
+def refresh():
+    current_user = get_jwt_identity()
+    new_token = create_access_token(identity=current_user)
+    return jsonify({'access_token': new_token}), 200
+
+# JWT 설정에 토큰 확인 콜백 추가
+@jwt.token_in_blocklist_loader
+def check_if_token_is_revoked(jwt_header, jwt_payload):
+    jti = jwt_payload["jti"]
+    token_in_redis = jwt_redis_blocklist.get(jti)
+    return token_in_redis is not None
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return error_response("요청한 리소스를 찾을 수 없습니다.", 404)
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return error_response("서버 내부 오류가 발생했습니다.", 500)
 
 if __name__ == '__main__':
     create_super_admin()

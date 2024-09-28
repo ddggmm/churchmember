@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from '../utils/axiosConfig';
-import { FaPrint, FaFileDownload, FaList, FaFilter, FaEraser } from 'react-icons/fa';
+import { FaPrint, FaFileDownload, FaList, FaFilter, FaEraser, FaEdit, FaSave } from 'react-icons/fa';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './MemberListPage.css';
@@ -25,13 +25,18 @@ function MemberListPage() {
   });
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const [isSimpleView, setIsSimpleView] = useState(false);
   const [uniqueValues, setUniqueValues] = useState({
     cities: [],
     districts: [],
     positions: []
   });
+  const [editingMember, setEditingMember] = useState(null);
+  const isAdmin = user && (user.role === 'admin' || user.role === 'superadmin');
+
+  console.log('User:', user);
+  console.log('Is Admin:', isAdmin);
 
   console.log('로그인 상태:', isLoggedIn);
 
@@ -303,6 +308,30 @@ function MemberListPage() {
     hoverElement.style.left = `${rect.right + 10}px`;
   };
 
+  const handleEdit = (member) => {
+    setEditingMember(member);
+  };
+
+  const handleSave = async () => {
+    try {
+      await axios.put(`/api/members/${editingMember.id}`, editingMember);
+      setMemberData(prevData => ({
+        ...prevData,
+        members: prevData.members.map(m => 
+          m.id === editingMember.id ? editingMember : m
+        )
+      }));
+      setEditingMember(null);
+    } catch (error) {
+      console.error('멤버 정보 수정 중 오류 발생:', error);
+      setError('멤버 정보 수정 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleChange = (e, field) => {
+    setEditingMember(prev => ({ ...prev, [field]: e.target.value }));
+  };
+
   return (
     <div className="member-list-container">
       {isLoggedIn ? (
@@ -392,105 +421,93 @@ function MemberListPage() {
             {isLoading ? (
               <p>로딩 중...</p>
             ) : filteredMembers.length > 0 ? (
-              isSimpleView ? (
-                <table ref={tableRef} className="member-list simple">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>사진</th>
-                      <th>이름</th>
-                      <th>생년월일</th>
-                      <th>전화번호</th>
-                      <th>구역</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMembers.map(member => (
-                      <tr key={member.id}>
-                        <td>{member.id}</td>
-                        <td>
-                          <div className="photo-container" onMouseEnter={handleMouseEnter}>
+              <table ref={tableRef} className={`member-list ${isSimpleView ? 'simple' : 'detailed'}`}>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>사진</th>
+                    <th>이름</th>
+                    {isSimpleView ? (
+                      <>
+                        <th>생년월일</th>
+                        <th>전화번호</th>
+                        <th>구역</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>생년</th>
+                        <th>생월</th>
+                        <th>생일</th>
+                        <th>전화번호</th>
+                        <th>주소</th>
+                        <th>도시</th>
+                        <th>주</th>
+                        <th>우편번호</th>
+                        <th>구역</th>
+                        <th>성별</th>
+                        <th>배우자</th>
+                        <th>직분</th>
+                      </>
+                    )}
+                    {isAdmin && <th>작업</th>} {/* 관리자용 열 추가 */}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMembers.map(member => (
+                    <tr key={member.id}>
+                      <td>{member.id}</td>
+                      <td>
+                        <div className="photo-container" onMouseEnter={handleMouseEnter}>
+                          <img 
+                            src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
+                            alt={member.name} 
+                            className="member-photo-thumbnail"
+                          />
+                          <div className="photo-hover">
                             <img 
                               src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
                               alt={member.name} 
-                              className="member-photo-thumbnail"
+                              className="member-photo-large"
                             />
-                            <div className="photo-hover">
-                              <img 
-                                src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
-                                alt={member.name} 
-                                className="member-photo-large"
-                              />
-                            </div>
                           </div>
-                        </td>
-                        <td>{member.name}</td>
-                        <td>{`${member.birthYear}-${member.birthMonth}-${member.birthDay}`}</td>
-                        <td>{member.phone}</td>
-                        <td>{member.district}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <table ref={tableRef} className="member-list detailed">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>사진</th>
-                      <th>이름</th>
-                      <th>생년</th>
-                      <th>생월</th>
-                      <th>생일</th>
-                      <th>전화번호</th>
-                      <th>주소</th>
-                      <th>도시</th>
-                      <th>주</th>
-                      <th>우편번호</th>
-                      <th>구역</th>
-                      <th>성별</th>
-                      <th>배우자</th>
-                      <th>직분</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMembers.map(member => (
-                      <tr key={member.id}>
-                        <td>{member.id}</td>
+                        </div>
+                      </td>
+                      {isSimpleView ? (
+                        <>
+                          <td>{member.name}</td>
+                          <td>{`${member.birthYear}-${member.birthMonth}-${member.birthDay}`}</td>
+                          <td>{member.phone}</td>
+                          <td>{member.district}</td>
+                        </>
+                      ) : (
+                        <>
+                          {['name', 'birthYear', 'birthMonth', 'birthDay', 'phone', 'address', 'city', 'state', 'zipcode', 'district', 'gender', 'spouse', 'position'].map(field => (
+                            <td key={field}>
+                              {editingMember && editingMember.id === member.id ? (
+                                <input
+                                  value={editingMember[field]}
+                                  onChange={(e) => handleChange(e, field)}
+                                />
+                              ) : (
+                                member[field]
+                              )}
+                            </td>
+                          ))}
+                        </>
+                      )}
+                      {isAdmin && (
                         <td>
-                          <div className="photo-container" onMouseEnter={handleMouseEnter}>
-                            <img 
-                              src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
-                              alt={member.name} 
-                              className="member-photo-thumbnail"
-                            />
-                            <div className="photo-hover">
-                              <img 
-                                src={getFullImageUrl(member.photoUrl) || '/default-profile.png'} 
-                                alt={member.name} 
-                                className="member-photo-large"
-                              />
-                            </div>
-                          </div>
+                          {editingMember && editingMember.id === member.id ? (
+                            <button onClick={handleSave} className="edit-button"><FaSave /></button>
+                          ) : (
+                            <button onClick={() => handleEdit(member)} className="edit-button"><FaEdit /></button>
+                          )}
                         </td>
-                        <td>{member.name}</td>
-                        <td>{member.birthYear}</td>
-                        <td>{member.birthMonth}</td>
-                        <td>{member.birthDay}</td>
-                        <td>{member.phone}</td>
-                        <td>{member.address}</td>
-                        <td>{member.city}</td>
-                        <td>{member.state}</td>
-                        <td>{member.zipcode}</td>
-                        <td>{member.district}</td>
-                        <td>{member.gender}</td>
-                        <td>{member.spouse}</td>
-                        <td>{member.position}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
               <p>표시할 회원이 없습니다.</p>
             )}

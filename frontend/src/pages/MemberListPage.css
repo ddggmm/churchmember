@@ -254,3 +254,32 @@
 .member-list.detailed td:nth-child(9) {
   width: 10%;
 }
+
+.member-list input {
+  width: 100%;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+.member-list button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2em;
+}
+
+.member-list button:hover {
+  color: #007bff;
+}
+
+.edit-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2em;
+  color: #007bff;
+}
+
+.edit-button:hover {
+  color: #0056b3;
+}
