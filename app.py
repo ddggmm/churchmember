@@ -1,11 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session, abort
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, abort, make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import base64
 from flask import send_from_directory
 from enum import Enum
@@ -29,6 +29,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=15)
+app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -306,13 +308,15 @@ def login():
     if user and user.check_password(password):
         access_token = create_access_token(identity=user.id)
         refresh_token = create_refresh_token(identity=user.id)
-        return jsonify({
+        response = make_response(jsonify({
             'user': user.to_dict(),
-            'access_token': access_token,
-            'refresh_token': refresh_token
-        }), 200
+            'message': '로그인 성공'
+        }))
+        response.set_cookie('access_token', access_token, httponly=True, secure=True, samesite='Lax')
+        response.set_cookie('refresh_token', refresh_token, httponly=True, secure=True, samesite='Lax')
+        return response, 200
     
-    return jsonify({"message": "이메일 또는 비밀번호가 잘못되었습니다"}), 401
+    return jsonify({"message": "이메일 또는 비밀��호가 잘못되었습니다"}), 401
 
 def is_password_valid(password):
     return len(password) >= 8 and any(c.isdigit() for c in password) and any(c.isalpha() for c in password)
@@ -418,27 +422,31 @@ def update_user_role(user_id):
     return jsonify({"error": "Invalid role"}), 400
 
 @app.route('/api/auth/logout', methods=['POST'])
-@jwt_required
+@jwt_required()
 def logout():
     jti = get_jwt()['jti']
-    jwt_redis_blocklist.set(jti, '', ex=3600)  # 1시간 동안 블랙리스트 추가
-    return jsonify({"message": "로그아웃 성공"}), 200
+    jwt_redis_blocklist.set(jti, '', ex=3600)
+    response = make_response(jsonify({"message": "로그아웃 성공"}))
+    response.delete_cookie('access_token')
+    response.delete_cookie('refresh_token')
+    return response, 200
 
 @app.route('/api/auth/check', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def check_auth():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    if user:
-        return jsonify({
-            "isLoggedIn": True,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "role": user.role.value
-            }
-        }), 200
-    return jsonify({"isLoggedIn": False}), 401
+    if current_user_id:
+        user = User.query.get(current_user_id)
+        if user:
+            return jsonify({
+                "isLoggedIn": True,
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "role": user.role.value
+                }
+            }), 200
+    return jsonify({"isLoggedIn": False}), 200
 
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @super_admin_required
@@ -492,6 +500,13 @@ def not_found_error(error):
 def internal_error(error):
     db.session.rollback()
     return error_response("서버 내부 오류가 발생했습니다.", 500)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
 
 if __name__ == '__main__':
     create_super_admin()
