@@ -10,10 +10,12 @@ import base64
 from flask import send_from_directory
 from enum import Enum
 from functools import wraps
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, create_refresh_token, jwt_refresh_token_required, get_jti, get_jwt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, create_refresh_token, get_jwt
 import re
 import redis
 from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
@@ -38,6 +40,14 @@ jwt = JWTManager(app)
 
 # 토큰 블랙리스트를 위한 Redis 설정 (또는 다른 저장소 사용)
 jwt_redis_blocklist = redis.StrictRedis(host="localhost", port=6379, db=0, decode_responses=True)
+
+# Limiter 설정
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
 
 # Member 모델 정의
 class Member(db.Model):
@@ -117,31 +127,27 @@ app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__fil
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def admin_required():
-    def wrapper(fn):
-        @wraps(fn)
-        @jwt_required()
-        def decorator(*args, **kwargs):
-            current_user_id = get_jwt_identity()
-            user = User.query.get(current_user_id)
-            if not user or user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
-                return jsonify({"error": "관리자 권한이 필요합니다."}), 403
-            return fn(*args, **kwargs)
-        return decorator
-    return wrapper
+def admin_required(f):
+    @wraps(f)
+    @jwt_required()
+    def decorated(*args, **kwargs):
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        if not user or user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+            return jsonify({"error": "관리자 권한이 필요합니다."}), 403
+        return f(*args, **kwargs)
+    return decorated
 
-def super_admin_required():
-    def wrapper(fn):
-        @wraps(fn)
-        @jwt_required()
-        def decorator(*args, **kwargs):
-            current_user_id = get_jwt_identity()
-            user = User.query.get(current_user_id)
-            if not user or user.role != UserRole.SUPER_ADMIN:
-                return jsonify({"error": "최고 관리자 권한이 필요합니다."}), 403
-            return fn(*args, **kwargs)
-        return decorator
-    return wrapper
+def super_admin_required(f):
+    @wraps(f)
+    @jwt_required()
+    def decorated(*args, **kwargs):
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        if not user or user.role != UserRole.SUPER_ADMIN:
+            return jsonify({"error": "최고 관리자 권한이 필요합니다."}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route('/')
 def index():
@@ -299,6 +305,7 @@ def create_member():
         return jsonify({"error": f"회원 등록 중 오류가 발생했습니다: {str(e)}"}), 500
 
 @app.route('/api/auth/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     data = request.json
     email = data.get('email')
@@ -316,19 +323,36 @@ def login():
         response.set_cookie('refresh_token', refresh_token, httponly=True, secure=True, samesite='Lax')
         return response, 200
     
-    return jsonify({"message": "이메일 또는 비밀��호가 잘못되었습니다"}), 401
+    return jsonify({"message": "이메일 또는 비밀호가 잘못되었습니다"}), 401
 
-def is_password_valid(password):
-    return len(password) >= 8 and any(c.isdigit() for c in password) and any(c.isalpha() for c in password)
+def is_password_strong(password, strict=False):
+    """
+    비밀번호 강도를 확인하는 함수
+    - strict 모드: 새 정책 (12자 이상)
+    - 비 strict 모드: 기존 정책 (10자 이상)
+    """
+    min_length = 12 if strict else 10
+    if len(password) < min_length:
+        return False
+    if not re.search(r'[A-Z]', password):
+        return False
+    if not re.search(r'[a-z]', password):
+        return False
+    if not re.search(r'\d', password):
+        return False
+    if strict and not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False
+    return True
 
 @app.route('/api/auth/signup', methods=['POST'])
+@limiter.limit("3 per hour")
 def signup():
     data = request.json
     email = data.get('email')
     password = data.get('password')
     
-    if not is_password_valid(password):
-        return error_response("비밀번호는 8자 이상이며, 숫자와 문자를 모두 포함해야 합니다.", 400)
+    if not is_password_strong(password):
+        return error_response("비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 하나 이상 포함해야 합니다.", 400)
     
     if User.query.filter_by(email=email).first():
         return jsonify({"message": "이미 존재하는 이메일입니다"}), 400
@@ -479,7 +503,7 @@ def update_null_emails():
     print(f"Updated {len(members)} members with null emails.")
 
 @app.route('/api/auth/refresh', methods=['POST'])
-@jwt_refresh_token_required
+@jwt_required(refresh=True)
 def refresh():
     current_user = get_jwt_identity()
     new_token = create_access_token(identity=current_user)
