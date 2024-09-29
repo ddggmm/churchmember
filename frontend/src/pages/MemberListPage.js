@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from '../utils/axiosConfig';
-import { FaPrint, FaFileDownload, FaList, FaFilter, FaEraser, FaEdit, FaSave } from 'react-icons/fa';
+import { FaPrint, FaFileDownload, FaList, FaFilter, FaEraser, FaEdit, FaSave, FaFileImport } from 'react-icons/fa';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './MemberListPage.css';
@@ -33,20 +33,14 @@ function MemberListPage() {
     positions: []
   });
   const [editingMember, setEditingMember] = useState(null);
-  const isAdmin = user && (user.role === 'admin' || user.role === 'superadmin');
+  const isAdmin = user && (user.role === 'admin' || user.role === 'SUPER_ADMIN');
 
-  console.log('User:', user);
-  console.log('Is Admin:', isAdmin);
-
-  console.log('로그인 상태:', isLoggedIn);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
-    console.log('useEffect 실행');
     if (searchResults) {
-      console.log('searchResults 사용');
       setMemberData({ members: searchResults, currentPage: 1, totalPages: 1 });
     } else {
-      console.log('fetchMembers 호출');
       fetchMembers();
     }
   }, [searchResults]);
@@ -332,6 +326,35 @@ function MemberListPage() {
     setEditingMember(prev => ({ ...prev, [field]: e.target.value }));
   };
 
+  const handleImportDB = () => {
+    fileInputRef.current.click();
+  };
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        setIsLoading(true);
+        const response = await axios.post('/api/import-db', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        console.log('파일 업로드 성공:', response.data);
+        // 성공 메시지 표시 또는 다른 작업 수행
+        fetchMembers(); // 회원 목록 새로고침
+      } catch (error) {
+        console.error('파일 업로드 실패:', error);
+        setError('데이터베이스 가져오기 중 오류가 발생했습니다.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
   return (
     <div className="member-list-container">
       {isLoggedIn ? (
@@ -352,6 +375,20 @@ function MemberListPage() {
                 <button onClick={handleExport} className="btn btn-secondary">
                   <FaFileDownload /> 파일저장
                 </button>
+                {user && user.role === 'SUPER_ADMIN' && (
+                  <>
+                    <button onClick={handleImportDB} className="btn btn-primary">
+                      <FaFileImport /> Import DB
+                    </button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      style={{ display: 'none' }}
+                      onChange={handleFileUpload}
+                      accept=".csv"
+                    />
+                  </>
+                )}
               </div>
               
               <div className="filter-controls">

@@ -231,8 +231,8 @@ function MemberRegistration() {
               className="w-full px-3 py-2 text-lg border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="" className="text-right text-gray-400">선택하세요 (Select)</option>
-              <option value="male">남성 (Male)</option>
-              <option value="female">여성 (Female)</option>
+              <option value="남자">남자</option>
+              <option value="여자">여자</option>
             </select>
           </div>
 

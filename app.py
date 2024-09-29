@@ -16,6 +16,8 @@ import redis
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import pandas as pd
+from io import StringIO
 
 load_dotenv()
 
@@ -531,6 +533,40 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     return response
+
+@app.route('/api/import-db', methods=['POST'])
+@jwt_required()
+@super_admin_required
+def import_db():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and file.filename.endswith('.csv'):
+        try:
+            # CSV 파일 읽기
+            stream = StringIO(file.stream.read().decode("UTF8"), newline=None)
+            df = pd.read_csv(stream)
+            
+            # 데이터베이스에 데이터 삽입 또는 업데이트
+            for _, row in df.iterrows():
+                member = Member.query.filter_by(email=row['email']).first()
+                if member:
+                    # 기존 회원 정보 업데이트
+                    for column in df.columns:
+                        setattr(member, column, row[column])
+                else:
+                    # 새 회원 추가
+                    new_member = Member(**row.to_dict())
+                    db.session.add(new_member)
+            
+            db.session.commit()
+            return jsonify({'message': 'Database imported successfully'}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'File type not allowed'}), 400
 
 if __name__ == '__main__':
     create_super_admin()
