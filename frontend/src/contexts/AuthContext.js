@@ -11,10 +11,11 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     try {
       const response = await axios.post('/api/auth/login', { email, password });
-      const { user } = response.data;
+      const { user, access_token, refresh_token } = response.data;
       setUser(user);
       setIsLoggedIn(true);
-      // 토큰을 localStorage에 저장하지 않음
+      localStorage.setItem('accessToken', access_token);
+      localStorage.setItem('refreshToken', refresh_token);
     } catch (error) {
       console.error('로그인 실패:', error);
       throw error;
@@ -24,12 +25,12 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try {
       await axios.post('/api/auth/logout');
-    } catch (error) {
-      console.error('로그아웃 중 오류 발생:', error);
-    } finally {
       setUser(null);
       setIsLoggedIn(false);
-      // localStorage에서 토큰 관련 항목 제거
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+    } catch (error) {
+      console.error('로그아웃 실패:', error);
     }
   }, []);
 

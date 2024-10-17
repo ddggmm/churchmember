@@ -13,6 +13,7 @@ import PublicMemberList from './pages/PublicMemberList';
 import SignUp from './pages/SignUp';
 import NotFound from './pages/NotFound';  // 404 페이지 컴포넌트 (새로 만들어야 함)
 import AdminDashboard from './pages/AdminDashboard';
+import AdminMemberManagement from './pages/AdminMemberManagement';
 
 function PrivateRoute({ children }) {
   const { isLoggedIn } = useAuth();
@@ -47,8 +48,9 @@ function AppContent() {
         <Route path="/member-registration" element={<PrivateRoute><MemberRegistration /></PrivateRoute>} />
         <Route path="/edit" element={<PrivateRoute><MemberEdit /></PrivateRoute>} />
         <Route path="/members/search" element={<PrivateRoute><MemberListPage /></PrivateRoute>} />
-        <Route path="/admin/users" element={<AdminRoute><AdminUserManagement /></AdminRoute>} />
+        <Route path="/admin/users" element={<AdminUserManagement />} />
         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+        <Route path="/admin/members" element={<AdminRoute><AdminMemberManagement /></AdminRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>

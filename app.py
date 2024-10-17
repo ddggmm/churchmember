@@ -18,6 +18,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import pandas as pd
 from io import StringIO
+from redis.exceptions import ConnectionError
 
 load_dotenv()
 
@@ -41,7 +42,13 @@ migrate = Migrate(app, db)
 jwt = JWTManager(app)
 
 # 토큰 블랙리스트를 위한 Redis 설정 (또는 다른 저장소 사용)
-jwt_redis_blocklist = redis.StrictRedis(host="localhost", port=6379, db=0, decode_responses=True)
+try:
+    jwt_redis_blocklist = redis.StrictRedis(host="localhost", port=6379, db=0, decode_responses=True)
+    jwt_redis_blocklist.ping()  # Redis 연결 테스트
+    print("Redis 연결 성공")
+except ConnectionError:
+    print("Redis 연결에 실패했습니다. Redis 서버가 실행 중인지 확인하세요.")
+    # 대체 로직 또는 애플리케이션 종료 처리
 
 # Limiter 설정
 limiter = Limiter(
@@ -317,15 +324,14 @@ def login():
     if user and user.check_password(password):
         access_token = create_access_token(identity=user.id)
         refresh_token = create_refresh_token(identity=user.id)
-        response = make_response(jsonify({
+        return jsonify({
             'user': user.to_dict(),
+            'access_token': access_token,
+            'refresh_token': refresh_token,
             'message': '로그인 성공'
-        }))
-        response.set_cookie('access_token', access_token, httponly=True, secure=True, samesite='Lax')
-        response.set_cookie('refresh_token', refresh_token, httponly=True, secure=True, samesite='Lax')
-        return response, 200
+        }), 200
     
-    return jsonify({"message": "이메일 또는 비밀호가 잘못되었습니다"}), 401
+    return jsonify({"message": "이메일 또는 비밀번호가 잘못되었습니다"}), 401
 
 def is_password_strong(password, strict=False):
     """
@@ -389,52 +395,98 @@ def error_response(message, status_code):
 @app.route('/api/members/<int:id>', methods=['PUT'])
 @jwt_required()
 def update_member(id):
-    member = Member.query.get_or_404(id)
-    data = request.json
-    
-    if 'email' in data:
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", data['email']):
-            return error_response("유효한 이메일 주소를 입력해주세요.", 400)
-
-    if 'email' in data and data['email'] != member.email:
-        if Member.query.filter_by(email=data['email']).first():
-            return error_response("이미 사용 중인 이메일 주소입니다.", 400)
-
-    for key, value in data.items():
-        if key == 'photo' and value:
-            image_data = base64.b64decode(value)
-            filename = f"member_{id}_photo.jpg"
-            with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as f:
-                f.write(image_data)
-            setattr(member, key, filename)
-        else:
-            setattr(member, key, value)
-    db.session.commit()
-    return jsonify({"message": "회원 정보가 성공적으로 수정되었습니다."})
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        if not user or user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+            return jsonify({"message": "권한이 없습니다."}), 403
+        
+        member = Member.query.get_or_404(id)
+        data = request.json  # JSON 데이터 사용
+        
+        for key, value in data.items():
+            if hasattr(member, key):
+                setattr(member, key, value)
+        
+        db.session.commit()
+        return jsonify({"message": "회원 정보가 업데이트되었습니다."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"회원 정보 업데이트 중 오류 발생: {str(e)}")
+        return jsonify({"error": "회원 정보 업데이트 중 오류가 발생했습니다."}), 500
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/api/members/<int:id>', methods=['DELETE'])
+@jwt_required()
 def delete_member(id):
-    try:
-        member = Member.query.get(id)
-        if not member:
-            return jsonify({"error": "회원을 찾을 수 없습니다."}), 404
-        
-        db.session.delete(member)
-        db.session.commit()
-        return jsonify({"message": "회원이 성공적으로 삭제되었습니다."}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(email=current_user).first()
+    if not user or user.role not in ['ADMIN', 'SUPER_ADMIN']:
+        return jsonify({"message": "권한이 없습니다."}), 403
+    
+    member = Member.query.get_or_404(id)
+    db.session.delete(member)
+    db.session.commit()
+    return jsonify({"message": "회원이 삭제되었습니다."}), 200
 
 @app.route('/api/admin/users', methods=['GET'])
+@jwt_required()
 @admin_required
-def get_users():
-    users = User.query.all()
-    return jsonify([user.to_dict() for user in users]), 200
+def get_all_users():
+    try:
+        users = User.query.all()
+        app.logger.info(f"Retrieved {len(users)} users")
+        return jsonify([user.to_dict() for user in users]), 200
+    except Exception as e:
+        app.logger.error(f"Error in get_all_users: {str(e)}")
+        return jsonify({"error": "사용자 목록을 불러오는 중 오류가 발생했습니다."}), 500
+
+@app.route('/api/admin/users', methods=['POST'])
+@jwt_required()
+@super_admin_required
+def create_user():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    role = data.get('role')
+
+    if not email or not password or not role:
+        return jsonify({"error": "이메일, 비밀번호, 역할은 필수입니다."}), 400
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "이미 존재하는 이메일입니다."}), 400
+
+    if role not in [r.name for r in UserRole]:
+        return jsonify({"error": "유효하지 않은 역할입니다."}), 400
+
+    new_user = User(email=email, role=UserRole[role])
+    new_user.set_password(password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify(new_user.to_dict()), 201
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@jwt_required()
+@super_admin_required
+def update_user(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.json
+
+    if 'email' in data:
+        user.email = data['email']
+    if 'role' in data:
+        if data['role'] not in [r.name for r in UserRole]:
+            return jsonify({"error": "유효하지 않은 역할입니다."}), 400
+        user.role = UserRole[data['role']]
+    if 'password' in data:
+        user.set_password(data['password'])
+
+    db.session.commit()
+    return jsonify(user.to_dict()), 200
 
 @app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
 @super_admin_required
@@ -452,7 +504,7 @@ def update_user_role(user_id):
 def logout():
     jti = get_jwt()['jti']
     jwt_redis_blocklist.set(jti, '', ex=3600)
-    response = make_response(jsonify({"message": "로그아웃 성공"}))
+    response = make_response(jsonify({"message": "그아웃 성공"}))
     response.delete_cookie('access_token')
     response.delete_cookie('refresh_token')
     return response, 200
@@ -508,8 +560,8 @@ def update_null_emails():
 @jwt_required(refresh=True)
 def refresh():
     current_user = get_jwt_identity()
-    new_token = create_access_token(identity=current_user)
-    return jsonify({'access_token': new_token}), 200
+    new_access_token = create_access_token(identity=current_user)
+    return jsonify(access_token=new_access_token), 200
 
 # JWT 설정에 토큰 확인 콜백 추가
 @jwt.token_in_blocklist_loader
@@ -567,6 +619,23 @@ def import_db():
             db.session.rollback()
             return jsonify({'error': str(e)}), 500
     return jsonify({'error': 'File type not allowed'}), 400
+
+@app.route('/api/members/<int:id>/photo', methods=['PUT'])
+@jwt_required()
+def update_member_photo(id):
+    if 'photo' not in request.files:
+        return jsonify({"message": "No file part"}), 400
+    file = request.files['photo']
+    if file.filename == '':
+        return jsonify({"message": "No selected file"}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        member = Member.query.get_or_404(id)
+        member.photoUrl = filename
+        db.session.commit()
+        return jsonify({"message": "Photo updated successfully"}), 200
+    return jsonify({"message": "File type not allowed"}), 400
 
 if __name__ == '__main__':
     create_super_admin()

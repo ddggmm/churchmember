@@ -309,21 +309,16 @@ function MemberListPage() {
   const handleSave = async () => {
     try {
       await axios.put(`/api/members/${editingMember.id}`, editingMember);
-      setMemberData(prevData => ({
-        ...prevData,
-        members: prevData.members.map(m => 
-          m.id === editingMember.id ? editingMember : m
-        )
-      }));
       setEditingMember(null);
+      fetchMembers(); // 회원 목록 새로고침
     } catch (error) {
-      console.error('멤버 정보 수정 중 오류 발생:', error);
-      setError('멤버 정보 수정 중 오류가 발생했습니다.');
+      console.error('회원 정보 수정 실패:', error);
+      alert('회원 정보 수정에 실패했습니다.');
     }
   };
 
   const handleChange = (e, field) => {
-    setEditingMember(prev => ({ ...prev, [field]: e.target.value }));
+    setEditingMember({ ...editingMember, [field]: e.target.value });
   };
 
   const handleImportDB = () => {
@@ -333,24 +328,28 @@ function MemberListPage() {
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const formData = new FormData();
-      formData.append('file', file);
-
       try {
-        setIsLoading(true);
+        // 토큰 갱신 시도
+        await axios.post('/api/auth/refresh');
+        
+        const formData = new FormData();
+        formData.append('file', file);
+
         const response = await axios.post('/api/import-db', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
         });
         console.log('파일 업로드 성공:', response.data);
-        // 성공 메시지 표시 또는 다른 작업 수행
-        fetchMembers(); // 회원 목록 새로고침
+        fetchMembers();
       } catch (error) {
         console.error('파일 업로드 실패:', error);
-        setError('데이터베이스 가져오기 중 오류가 발생했습니다.');
-      } finally {
-        setIsLoading(false);
+        if (error.response && error.response.status === 401) {
+          // 인증 오류 시 로그인 페이지로 리다이렉트
+          window.location.href = '/login';
+        } else {
+          setError('데이터베이스 가져오기 중 오류가 발생했습니다.');
+        }
       }
     }
   };
